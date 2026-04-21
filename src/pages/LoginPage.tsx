@@ -37,7 +37,7 @@ const LoginPage = () => {
 
       const userId = authData.user?.id;
       if (userId) {
-        // Check if admin
+        // Check if admin first (admins skip rejection check)
         const { data: isAdmin } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" } as never);
         if (isAdmin) {
           toast.success("Welcome, Admin!");
@@ -45,8 +45,23 @@ const LoginPage = () => {
           return;
         }
 
-        // Get profile role for redirect
-        const { data: profile } = await supabase.from("profiles").select("role").eq("id", userId).single();
+        // Get profile (status + role)
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, status")
+          .eq("id", userId)
+          .single();
+
+        // BLOCK rejected users
+        if (profile?.status === "rejected") {
+          await supabase.auth.signOut();
+          toast.error(
+            "❌ Your profile has been rejected by the administrator. You cannot access the platform. Please register again with the correct details.",
+            { duration: 8000 }
+          );
+          return;
+        }
+
         if (profile?.role === "volunteer") {
           toast.success("Login successful!");
           navigate("/about");
