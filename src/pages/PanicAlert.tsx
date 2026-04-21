@@ -15,24 +15,30 @@ import { motion } from "framer-motion";
 import LocationMap from "@/components/LocationMap";
 import LanguageSelector from "@/components/LanguageSelector";
 
+const DANGER_TYPES = [
+  { value: "suspicious_activity", label: "Suspicious activity around children" },
+  { value: "kidnapping_attempt", label: "Kidnapping / abduction attempt" },
+  { value: "unsafe_area", label: "Unsafe area (school / playground / public place)" },
+  { value: "accident", label: "Accident involving a child" },
+  { value: "stranger_danger", label: "Unknown stranger approaching children" },
+  { value: "other", label: "Other emergency" },
+];
+
 const PanicAlert = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
-  const [children, setChildren] = useState<any[]>([]);
-  const [selectedChild, setSelectedChild] = useState("");
+  const [dangerType, setDangerType] = useState("");
+  const [areaType, setAreaType] = useState("");
   const [locationText, setLocationText] = useState("");
   const [message, setMessage] = useState("");
   const [geoLocation, setGeoLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      supabase.from("children").select("id, name").eq("user_id", user.id).then(({ data }) => setChildren(data || []));
-    }
     getLocation();
-  }, [user]);
+  }, []);
 
   const getLocation = () => {
     if (!navigator.geolocation) return;
@@ -57,16 +63,22 @@ const PanicAlert = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedChild || !locationText.trim()) {
-      toast.error("Please select a child and provide location");
+    if (!dangerType || !locationText.trim()) {
+      toast.error("Please choose a danger type and provide a location");
       return;
     }
-    const child = children.find((c) => c.id === selectedChild);
+    const dangerLabel = DANGER_TYPES.find((d) => d.value === dangerType)?.label || dangerType;
     setLoading(true);
     try {
+      const fullMessage =
+        `🚨 PANIC ALERT — ${dangerLabel}` +
+        (areaType ? ` at ${areaType}` : "") +
+        ` | Location: ${locationText}` +
+        (message.trim() ? ` | Details: ${message.trim()}` : "");
+
       const insertData: Record<string, unknown> = {
         user_id: user!.id,
-        message: message.trim() || `PANIC ALERT: ${child?.name} - Emergency at ${locationText}`,
+        message: fullMessage,
         location_address: locationText,
       };
       if (geoLocation) {
@@ -75,7 +87,7 @@ const PanicAlert = () => {
       }
       const { error } = await supabase.from("alerts").insert(insertData as never);
       if (error) throw error;
-      toast.success("🚨 Emergency alert submitted! All users have been notified.");
+      toast.success("🚨 Panic alert broadcast! Everyone in the community has been notified.");
       navigate("/dashboard");
     } catch (err: any) {
       toast.error(err.message || "Failed to submit alert");
@@ -100,21 +112,38 @@ const PanicAlert = () => {
                 <AlertTriangle className="h-8 w-8 text-destructive" />
               </motion.div>
               <div>
-                <CardTitle className="text-2xl text-destructive">{t("panic.title")}</CardTitle>
-                <CardDescription>Submit an emergency alert for your child</CardDescription>
+                <CardTitle className="text-2xl text-destructive">Community Panic Alert</CardTitle>
+                <CardDescription>
+                  Spotted a danger near children (school, playground, public area)? Alert every user instantly.
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label>{t("panic.childName")} *</Label>
-                <Select value={selectedChild} onValueChange={setSelectedChild}>
-                  <SelectTrigger><SelectValue placeholder="Select child" /></SelectTrigger>
+                <Label>Type of danger *</Label>
+                <Select value={dangerType} onValueChange={setDangerType}>
+                  <SelectTrigger><SelectValue placeholder="What did you see?" /></SelectTrigger>
                   <SelectContent>
-                    {children.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    {DANGER_TYPES.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Area</Label>
+                <Select value={areaType} onValueChange={setAreaType}>
+                  <SelectTrigger><SelectValue placeholder="Where? (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="School">School / school gate</SelectItem>
+                    <SelectItem value="Playground">Playground / park</SelectItem>
+                    <SelectItem value="Bus Stop">Bus stop / transport area</SelectItem>
+                    <SelectItem value="Market">Market / public area</SelectItem>
+                    <SelectItem value="Residential">Residential street</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -139,17 +168,17 @@ const PanicAlert = () => {
               )}
 
               <div className="space-y-2">
-                <Label>{t("panic.location")} *</Label>
-                <Input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="e.g. Near Central Park, Gate 3" />
+                <Label>Exact location *</Label>
+                <Input value={locationText} onChange={(e) => setLocationText(e.target.value)} placeholder="e.g. Near Central Park gate 3" />
               </div>
 
               <div className="space-y-2">
-                <Label>{t("panic.additionalDetails")}</Label>
-                <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Describe the emergency situation..." rows={3} />
+                <Label>What is happening? (optional details)</Label>
+                <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Describe the situation so others can help..." rows={3} />
               </div>
 
               <Button type="submit" variant="destructive" className="w-full" disabled={loading}>
-                {loading ? t("common.submitting") : `🚨 ${t("panic.submit")}`}
+                {loading ? t("common.submitting") : "🚨 Broadcast Panic Alert"}
               </Button>
             </form>
           </CardContent>
