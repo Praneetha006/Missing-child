@@ -52,15 +52,38 @@ const RegisterPage = () => {
     if (!validate()) return;
     setLoading(true);
     try {
+      let userId: string | undefined;
+      let isReRegistration = false;
+
       const { data, error } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
       });
-      if (error) throw error;
 
-      if (data.user) {
-        const { error: profileError } = await supabase.from("profiles").insert({
-          id: data.user.id,
+      if (error) {
+        // Email already exists — likely a previously rejected user trying to re-apply.
+        if (error.message.toLowerCase().includes("already") || error.message.toLowerCase().includes("registered")) {
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: form.email,
+            password: form.password,
+          });
+          if (signInError) {
+            toast.error("This email is already registered. Use the same password you registered with, or use a different email.");
+            return;
+          }
+          userId = signInData.user?.id;
+          isReRegistration = true;
+        } else {
+          throw error;
+        }
+      } else {
+        userId = data.user?.id;
+      }
+
+      if (userId) {
+        // Upsert profile so re-registration after rejection resets status to pending.
+        const { error: profileError } = await supabase.from("profiles").upsert({
+          id: userId,
           full_name: form.fullName,
           email: form.email,
           phone: form.phone,
@@ -71,11 +94,22 @@ const RegisterPage = () => {
           address: form.address,
           has_children: false,
           guardian_declaration: true,
+          status: "pending",
+          verified: false,
         });
         if (profileError) throw profileError;
       }
 
-      toast.success("Registration successful! Please check your email to verify, then log in.");
+      // If we signed in to re-register, sign out so admin can review again.
+      if (isReRegistration) {
+        await supabase.auth.signOut();
+      }
+
+      toast.success(
+        isReRegistration
+          ? "✅ Re-registration submitted! Please wait for admin approval before logging in."
+          : "Registration successful! Please check your email to verify, then log in."
+      );
       navigate("/login");
     } catch (err: any) {
       toast.error(err.message || "Registration failed");
