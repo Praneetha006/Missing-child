@@ -26,16 +26,54 @@ const Dashboard = () => {
   useEffect(() => {
     const channel = supabase
       .channel("dashboard-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "alerts" }, () => {
-        toast.warning("🚨 New Panic Alert received!");
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "alerts" }, (payload) => {
+        const alert = payload.new as any;
+        // Broadcast panic alert to ALL users (community-wide awareness)
+        toast.warning(`🚨 PANIC ALERT: ${alert.message?.slice(0, 120) || "Emergency near you"}`, {
+          duration: 10000,
+        });
       })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "reports" }, () => {
-        toast.info("📢 New Community Report submitted!");
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "reports" }, (payload) => {
-        if (payload.eventType === "UPDATE") {
-          toast.info("📋 A case status was updated!");
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "reports" }, (payload) => {
+        const report = payload.new as any;
+        // Broadcast missing-child reports to EVERYONE for community awareness
+        if (report.type === "missing") {
+          toast.warning(`🔍 MISSING CHILD reported at ${report.location}. Please keep watch!`, {
+            duration: 10000,
+          });
+        } else if (report.type === "found") {
+          toast.success(`💚 A child has been reported FOUND at ${report.location}`);
         }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "reports" }, (payload) => {
+        const report = payload.new as any;
+        // TARGETED notification: parent who originally reported the missing child
+        if (user && report.user_id === user.id && report.status === "found") {
+          toast.success(
+            `🎉 GREAT NEWS! Your missing-child case has been marked as FOUND. Please contact authorities to confirm.`,
+            { duration: 15000 }
+          );
+        } else {
+          toast.info(`📋 A case status was updated to "${report.status}"`);
+        }
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "sightings" }, async (payload) => {
+        const sighting = payload.new as any;
+        // If this sighting is linked to a report, notify the original reporting parent specifically
+        if (sighting.linked_report_id && user) {
+          const { data: linkedReport } = await supabase
+            .from("reports")
+            .select("user_id, description")
+            .eq("id", sighting.linked_report_id)
+            .single();
+          if (linkedReport?.user_id === user.id) {
+            toast.success(
+              `👁️ Someone has SPOTTED your missing child! Location: ${sighting.location}. Check Sightings for details.`,
+              { duration: 15000 }
+            );
+            return;
+          }
+        }
+        toast.info(`👁️ New sighting reported at ${sighting.location}`);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "rfid_scans" }, (payload) => {
         const scan = payload.new as any;
@@ -44,7 +82,7 @@ const Dashboard = () => {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [children]);
+  }, [children, user]);
 
   const solutions = [
     { key: "rfid", icon: Radio, title: t("solution.rfid"), desc: t("solution.rfid.desc"), path: "/rfid" },
