@@ -44,7 +44,7 @@ const TitlePage = () => {
         >
           Missing Child
         </motion.h1>
-        <p className="text-white text-lg">UPDATED VERSION 🚀</p>
+        
         <motion.p
           className="text-xl md:text-2xl text-primary-foreground/80 font-light"
           initial={{ opacity: 0 }}
